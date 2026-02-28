@@ -4,5 +4,4 @@ __pycache__/
 *.csv
 *.zip
 *.pkl
-*.ptgit add .
-git commit -m "Initial clean commit"
+*.pt
