@@ -50,7 +50,7 @@ def discover_raw_files(directory: Path) -> list[Path]:
         return []
 
     files = []
-    for p in directory.glob("*.parquet"):
+    for p in directory.rglob("*.parquet"):
         if FILE_PATTERN.match(p.name):
             files.append(p)
     return sorted(files)
@@ -102,7 +102,7 @@ def load_raw_subset(path: Path) -> pd.DataFrame:
     return df
 
 
-def process_single_file(path: Path, db_config: DBConfig) -> None:
+def process_single_file(path: Path, db_config: DBConfig, output_dir: str = ".") -> None:
     """
     Xử lý một file raw .parquet:
     - đọc dữ liệu
@@ -129,7 +129,7 @@ def process_single_file(path: Path, db_config: DBConfig) -> None:
         print(f"  - Region {region_name}: input rows = {len(df_region)}")
 
         # 3) Xử lý đặc trưng + sliding window để ra dataset 92 cột
-        df_train, meta = build_training_dataset_for_region(df_region)
+        df_train, meta = build_training_dataset_for_region(df_region, region_name=region_name, id_month=month, output_dir=output_dir)
         print(f"    -> Training dataset shape: {df_train.shape}")
 
         # 4) Ghi vào SQL Server
@@ -160,7 +160,7 @@ def process_single_file(path: Path, db_config: DBConfig) -> None:
     print(f"=== Done file: {path.name} ===")
 
 
-def main(files: Iterable[Path] | None = None) -> None:
+def main(files: Iterable[Path] | None = None, output_dir: str = ".") -> None:
     """
     Điểm vào chính của pipeline.
     - Nếu `files` None: tự động quét folder raw_data.
@@ -182,7 +182,7 @@ def main(files: Iterable[Path] | None = None) -> None:
         print(f"  - {p.name}")
 
     for p in files_to_process:
-        process_single_file(p, DB_CONFIG)
+        process_single_file(p, DB_CONFIG, output_dir=output_dir)
 
     print("\nHoàn thành toàn bộ pipeline.")
 

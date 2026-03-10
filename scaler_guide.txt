@@ -1,0 +1,218 @@
+================================================================================
+       HƯỚNG DẪN VỀ SCALER TRONG PIPELINE DỰ ĐOÁN QUỸ ĐẠO TÀU
+================================================================================
+
+1. VẤN ĐỀ HIỆN TẠI
+--------------------------------------------------------------------------------
+Hiện tại, khi tạo dữ liệu training (pre-windowed CSV), bước preprocessing
+tính ra các tham số scaler (lat_ref, lon_ref, mean_xm, mean_ym, std_xm, std_ym)
+nhưng KHÔNG LƯU LẠI. Điều này khiến việc chuyển ngược từ X_norm/Y_norm về
+tọa độ LAT/LON (để visualization) bị sai hoàn toàn.
+
+Mỗi vùng (bay/offshore) có scaler RIÊNG, vì:
+  - lat_ref = median(LAT) của vùng đó
+  - lon_ref = median(LON) của vùng đó
+  - StandardScaler fit riêng trên X_m, Y_m của vùng đó
+
+
+2. SCALER LÀ GÌ?
+--------------------------------------------------------------------------------
+Pipeline chuyển tọa độ qua 2 bước:
+
+  Bước 1: Equirectangular projection  (LAT, LON) -> (X_m, Y_m)
+    X_m = (lon - lon_ref) * cos(lat_ref) * R_EARTH
+    Y_m = (lat - lat_ref) * R_EARTH
+
+    Trong đó:
+      - lat_ref = median(LAT) của toàn bộ data trong vùng
+      - lon_ref = median(LON) của toàn bộ data trong vùng
+      - R_EARTH = 6,371,000 m
+
+  Bước 2: StandardScaler  (X_m, Y_m) -> (X_norm, Y_norm)
+    X_norm = (X_m - mean_xm) / std_xm
+    Y_norm = (Y_m - mean_ym) / std_ym
+
+    Trong đó:
+      - mean_xm = mean(X_m)   (trung bình của X_m trên toàn bộ data training)
+      - std_xm  = std(X_m)    (độ lệch chuẩn của X_m)
+      - mean_ym, std_ym tương tự cho Y_m
+
+Các tham số cần lưu: lat_ref, lon_ref, mean_xm, std_xm, mean_ym, std_ym
+
+
+3. CÁCH LƯU SCALER
+--------------------------------------------------------------------------------
+Sau khi chạy build_phase_features(), hàm trả về dict `meta` chứa:
+  - meta["lat_ref"]    : float
+  - meta["lon_ref"]    : float
+  - meta["scaler_xy"]  : sklearn.preprocessing.StandardScaler object
+    + scaler_xy.mean_  = [mean_xm, mean_ym]
+    + scaler_xy.scale_ = [std_xm, std_ym]
+
+Cần lưu ra file sau khi preprocessing xong. Có 2 cách:
+
+  Cách 1: Lưu bằng pickle (giữ nguyên object StandardScaler)
+  ----------
+    import pickle
+
+    meta_to_save = {
+        "lat_ref":  meta["lat_ref"],
+        "lon_ref":  meta["lon_ref"],
+        "mean_xm": float(meta["scaler_xy"].mean_[0]),
+        "mean_ym": float(meta["scaler_xy"].mean_[1]),
+        "std_xm":  float(meta["scaler_xy"].scale_[0]),
+        "std_ym":  float(meta["scaler_xy"].scale_[1]),
+        "scaler_xy": meta["scaler_xy"],  # giữ nguyên object
+    }
+
+    with open("scaler_offshore.pkl", "wb") as f:
+        pickle.dump(meta_to_save, f)
+
+  Cách 2: Lưu bằng JSON (dễ đọc, không phụ thuộc sklearn version)
+  ----------
+    import json
+
+    scaler_info = {
+        "lat_ref":  meta["lat_ref"],
+        "lon_ref":  meta["lon_ref"],
+        "mean_xm": float(meta["scaler_xy"].mean_[0]),
+        "mean_ym": float(meta["scaler_xy"].mean_[1]),
+        "std_xm":  float(meta["scaler_xy"].scale_[0]),
+        "std_ym":  float(meta["scaler_xy"].scale_[1]),
+    }
+
+    with open("scaler_offshore.json", "w") as f:
+        json.dump(scaler_info, f, indent=2)
+
+  ** QUAN TRỌNG: Mỗi vùng (bay, offshore) cần 1 file scaler riêng! **
+    - scaler_offshore.json
+    - scaler_bay.json
+
+
+4. NÊN LƯU SCALER Ở ĐÂU?
+--------------------------------------------------------------------------------
+Khi export data từ SQL, lưu scaler cùng thư mục với data:
+
+  Data_Export_vsc/
+    2023/
+      offshore/
+        training_offshore_part1.csv
+        training_offshore_part2.csv
+        ...
+      bay/
+        training_bay_part1.csv
+        ...
+    2024/
+      offshore/...
+      bay/...
+    scaler_offshore.json    <-- LƯU Ở ĐÂY
+    scaler_bay.json         <-- LƯU Ở ĐÂY
+
+Hoặc lưu vào checkpoint khi training:
+
+    ckpt = {
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "val_loss": best_val_loss,
+        "config": cfg,
+        "scaler_geo": {                          # <-- THÊM CÁI NÀY
+            "lat_ref": lat_ref,
+            "lon_ref": lon_ref,
+            "mean_xm": mean_xm,
+            "std_xm": std_xm,
+            "mean_ym": mean_ym,
+            "std_ym": std_ym,
+        },
+    }
+    torch.save(ckpt, "best_model.pt")
+
+
+5. CODE MẪU: THÊM VÀO data_pipeline.py
+--------------------------------------------------------------------------------
+Trong hàm build_training_dataset_for_region(), sau khi có meta, thêm:
+
+    import json
+
+    def build_training_dataset_for_region(
+        df_region: pd.DataFrame,
+        region_name: str = "offshore",   # thêm tham số tên vùng
+        output_dir: str = ".",
+    ) -> Tuple[pd.DataFrame, dict]:
+
+        # ... (code hiện tại giữ nguyên) ...
+
+        df_feat, meta = utils_1.build_phase_features(df_clean, ...)
+
+        # === THÊM ĐOẠN NÀY: Lưu scaler ===
+        scaler_info = {
+            "region": region_name,
+            "lat_ref": meta["lat_ref"],
+            "lon_ref": meta["lon_ref"],
+            "mean_xm": float(meta["scaler_xy"].mean_[0]),
+            "mean_ym": float(meta["scaler_xy"].mean_[1]),
+            "std_xm": float(meta["scaler_xy"].scale_[0]),
+            "std_ym": float(meta["scaler_xy"].scale_[1]),
+        }
+        scaler_path = f"{output_dir}/scaler_{region_name}.json"
+        with open(scaler_path, "w") as f:
+            json.dump(scaler_info, f, indent=2)
+        print(f"Scaler đã lưu tại {scaler_path}")
+        # === HẾT ĐOẠN THÊM ===
+
+        # ... (phần còn lại giữ nguyên) ...
+
+
+6. CHUYỂN NGƯỢC: X_norm/Y_norm -> LAT/LON
+--------------------------------------------------------------------------------
+Khi visualization hoặc inference, đọc scaler và chuyển ngược:
+
+    import json
+    import numpy as np
+
+    with open("scaler_offshore.json") as f:
+        sc = json.load(f)
+
+    R_EARTH = 6_371_000.0
+
+    def norm_to_latlon(x_norm, y_norm, sc):
+        x_m = x_norm * sc["std_xm"] + sc["mean_xm"]
+        y_m = y_norm * sc["std_ym"] + sc["mean_ym"]
+        lat = sc["lat_ref"] + np.degrees(y_m / R_EARTH)
+        lon = sc["lon_ref"] + np.degrees(x_m / (R_EARTH * np.cos(np.radians(sc["lat_ref"]))))
+        return lat, lon
+
+    # Ví dụ:
+    lat, lon = norm_to_latlon(0.5, -1.2, sc)
+    print(f"lat={lat:.4f}, lon={lon:.4f}")
+
+
+7. GIÁ TRỊ THAM KHẢO (ƯỚC LƯỢNG, CHƯA CHÍNH XÁC)
+--------------------------------------------------------------------------------
+Hiện tại chưa có scaler chính xác vì không lưu khi preprocessing.
+Giá trị ước lượng đang dùng:
+
+  Offshore (California):
+    lat_ref  ~  33.65
+    lon_ref  ~ -118.40
+    mean_xm  ~  0.0
+    mean_ym  ~  0.0
+    std_xm   ~  24,000 m
+    std_ym   ~  17,000 m
+
+  Bay:
+    lat_ref  ~  37.85
+    lon_ref  ~ -122.40
+    (chưa tính std_xm, std_ym)
+
+  => CẦN CHẠY LẠI PREPROCESSING TRÊN RAW DATA ĐỂ CÓ GIÁ TRỊ CHÍNH XÁC!
+
+
+8. TÓM TẮT VIỆC CẦN LÀM
+--------------------------------------------------------------------------------
+  [1] Chạy lại preprocessing trên raw data (từ SQL Docker) cho từng vùng
+  [2] Lưu scaler ra file JSON (scaler_offshore.json, scaler_bay.json)
+  [3] Đặt file scaler cùng thư mục với data export
+  [4] (Tùy chọn) Lưu scaler vào checkpoint khi training để tự động load
+
+================================================================================

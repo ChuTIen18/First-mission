@@ -1,13 +1,13 @@
 numpy==1.26.4
 pandas==2.3.2
-scipy==1.16.1
+scipy==1.15.2
 scikit-learn==1.7.1
 
 matplotlib==3.10.5
 folium==0.20.0
 branca==0.8.1
 
-pyproj==3.7.2
+pyproj==3.6.1
 pyarrow==14.0.2
 duckdb==1.3.2
 pyodbc==5.2.0

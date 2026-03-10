@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
@@ -94,6 +95,9 @@ def _basic_cleaning(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_training_dataset_for_region(
     df_region: pd.DataFrame,
+    region_name: str, # Thêm tham số này để biết đang chạy cho vùng nào
+    id_month: int = 0, # Tháng đang xử lý, dùng để phân biệt trong scaler JSON
+    output_dir: str = ".", # Mặc định lưu scaler ở thư mục hiện tại
 ) -> Tuple[pd.DataFrame, dict]:
     """
     Xây dựng dataset huấn luyện (92 cột) cho một vùng (bay/offshore):
@@ -130,6 +134,42 @@ def build_training_dataset_for_region(
         scaler_xy=None,
     )
 
+    # chèn logic lưu scaler json
+    scaler_info = {
+        "region": region_name,
+        "id_month": id_month,
+        "lat_ref": meta["lat_ref"],
+        "lon_ref": meta["lon_ref"],
+        "mean_xm": float(meta["scaler_xy"].mean_[0]),
+        "mean_ym": float(meta["scaler_xy"].mean_[1]),
+        "std_xm": float(meta["scaler_xy"].scale_[0]),
+        "std_ym": float(meta["scaler_xy"].scale_[1]),
+    }
+
+    # Đọc array cũ (nếu có), thêm entry mới, ghi lại
+    scaler_path = f"{output_dir}/scaler_{region_name}.json"
+    existing: list = []
+    try:
+        with open(scaler_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                existing = data
+            else:
+                # File cũ là single object → chuyển thành list
+                existing = [data]
+    except (FileNotFoundError, json.JSONDecodeError):
+        existing = []
+
+    # Loại bỏ entry trùng id_month (để idempotent khi chạy lại)
+    existing = [e for e in existing if e.get("id_month") != id_month]
+    existing.append(scaler_info)
+    # Sắp xếp theo id_month cho dễ đọc
+    existing.sort(key=lambda x: x.get("id_month", 0))
+
+    with open(scaler_path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2)
+    print(f"    [+] Đã lưu Scaler của {region_name} (id_month={id_month}) tại: {scaler_path}")
+    
     # Cắt sliding window theo đúng hàm trong utils_1
     shards = utils_1.build_sequence_samples_limited(
         df_feat,
