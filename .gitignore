@@ -1,0 +1,7 @@
+venv/
+raw_data/
+__pycache__/
+*.zip
+*.pkl
+*.pt
+*.csv
