@@ -360,21 +360,19 @@ Các biến thể này phản ánh lộ trình tiến hoá từ đơn giản $\t
 % hinh tik
 % hinh tik
 
-\section{Thực nghiệm}
+% --------PHẦN 5---------
+\section{Thực nghiệm và Kết quả}
 
-\subsection{Dữ liệu và tiền xử lý}
-Nghiên cứu sử dụng dữ liệu NOAA AIS thu thập tại hai khu vực: 
-(i) vùng ven khơi California (tàu hành trình xa bờ, chủ yếu chạy thẳng), 
-và (ii) Vịnh San Francisco (tàu vào cảng, quay đầu nhiều hơn). 
-Dữ liệu được chọn trong tháng 04/2023, với khoảng cách thời gian trung bình giữa các bản ghi là 60 giây. 
+Phần này trình bày chi tiết về bộ dữ liệu, cách thức thiết lập mô hình, các độ đo đánh giá và kết quả so sánh giữa phương pháp truyền thống (chỉ dùng dữ liệu) và phương pháp tích hợp vật lý (SphyL-Vessel).
 
-Sau tiền xử lý, thu được hai tập hợp:
+\subsection{Dữ liệu và Tiền xử lý (Data \& Preprocessing)}
+Nghiên cứu sử dụng tập dữ liệu hệ thống nhận dạng tự động (AIS) mã nguồn mở từ NOAA, thu thập trong tháng \textbf{04/2023}. Để đánh giá toàn diện tính mạnh mẽ của mô hình, dữ liệu được chia làm hai bối cảnh địa lý có đặc thù động lực học hoàn toàn khác nhau:
 \begin{itemize}
-  \item \textbf{California khơi xa:} 212{,}934 mẫu hợp lệ.
-  \item \textbf{San Francisco:} 282{,}425 mẫu hợp lệ.
+    \item \textbf{Vùng biển California khơi xa (212.934 mẫu):} Đặc trưng bởi các tàu hàng lớn di chuyển với quỹ đạo thẳng, tốc độ cao và ổn định.
+    \item \textbf{Vùng Vịnh San Francisco (282.425 mẫu):} Đặc trưng bởi không gian chật hẹp, tàu bè (đặc biệt là phà) phải liên tục giảm tốc, quay đầu và cập cảng.
 \end{itemize}
 
-Các bước tiền xử lý chính gồm:
+\textbf{Tiền xử lý:} 
 \begin{itemize}
   \item \textbf{Lọc tốc độ:} loại bỏ các đoạn có SOG $< 6$ kn (tàu neo/đỗ) và SOG $> 40$ kn (ngoại lệ/nhiễu).
   \item \textbf{Lọc thời gian:} loại bỏ các khoảng gián đoạn vượt quá 300 giây.
@@ -383,95 +381,91 @@ Các bước tiền xử lý chính gồm:
 \end{itemize}
 Mỗi mẫu được xây dựng từ cửa sổ 10 bước ($t_0 \ldots t_9$) để dự báo vị trí ở bước kế tiếp ($t_{10}$).
 
-\subsection{Cấu hình mô hình}
-Ba cấu hình chính được so sánh:
-\begin{itemize}
-  \item \textbf{Baseline:} LSTM hai tầng, attention pooling, đầu ra tuyến tính (FC(2)). Loss chuẩn: MSE.
-  \item \textbf{Ellipse-only ($\tau$-adapt):} ràng buộc vật lý dạng siêu elip dịch tâm, điều chỉnh theo $\tau$ (turn-rate, gia tốc dọc). Loss convex--smooth với softplus hinge.
-  \item \textbf{Tube--Stomach (+ellipse profile):} hành lang bất đối xứng với bụng (stomach), có cap động theo tốc độ, kết hợp profile elip trơn bên ngoài. 
-\end{itemize}
-Ngoài ra, chúng tôi thử nghiệm thêm một biến thể \textbf{Tube--Stomach chỉ loss vật lý} (tắt hoàn toàn MSE, $\lambda=1$) để đánh giá vai trò kết hợp dữ liệu và ràng buộc vật lý.  
+\subsection{Thiết lập Mô hình và Quá trình Huấn luyện}
+Để chứng minh tính ``Architecture-invariant'' (bất biến với kiến trúc), chúng tôi giữ nguyên một kiến trúc mạng nơ-ron duy nhất cho tất cả các thử nghiệm và chỉ thay đổi hàm mất mát (Loss function).
 
-Tất cả mô hình đều huấn luyện cùng siêu tham số: batch = 64, epochs = 50, tối ưu với cosine LR scheduler và EMA smoothing.
-
-\subsection{Thước đo đánh giá}
-Chúng tôi sử dụng cả thước đo sai số điểm và thước đo an toàn--khả dĩ:
 \begin{itemize}
-  \item \textbf{Sai số điểm:} RMSE, MAE, Median, P90, P95.
-  \item \textbf{An toàn--khả dĩ:} Hit@100m (tỉ lệ dự đoán trong bán kính 100 m quanh quỹ đạo thật), Coverage (tỉ lệ dự đoán nằm trong miền khả dĩ).
-  \item \textbf{Độ tương đồng hình học và công bằng (Fairness):} 
-  coverage theo $\gamma$, diện tích trung bình (area\_mean), 
-  tỷ lệ diện tích (area\_ratio), chỉ số CPA, mức độ outside severity và inside margin.
+    \item \textbf{Baseline Model:} Sử dụng kiến trúc mạng LSTM hai tầng (2-layer) kết hợp với cơ chế gộp tập trung (Attention pooling) nhằm trích xuất sự phụ thuộc không gian - thời gian của chuỗi dữ liệu lịch sử. Tọa độ tương lai của tàu được nội suy thông qua một lớp tuyến tính kết nối đầy đủ (FC) với kích thước đầu ra bằng 2. Trong thiết lập tiêu chuẩn, mô hình thuần túy hướng dữ liệu này được huấn luyện bằng hàm mất mát sai số toàn phương trung bình (MSE).
+    \item \textbf{SphyL-Ellipse (Ellipse-only):} Mô hình Baseline được tăng cường thêm hàm phạt vật lý dựa trên miền khả dĩ động học dạng Siêu elip (Super-ellipse). Khác với các biên cố định, Siêu elip này có khả năng dịch tâm linh hoạt dựa trên vận tốc hiện tại, gia tốc dọc và tốc độ quay vòng (turn-rate $\tau$) để bù đắp lực quán tính. Về mặt tối ưu hóa, hàm mất mát được thiết kế đảm bảo tính lồi toàn cục và trơn tru (convex-smooth) thông qua việc sử dụng hàm bản lề \textit{Softplus}, giúp mạng nơ-ron hội tụ nhanh chóng mà không gặp hiện tượng suy biến gradient.
+    \item \textbf{SphyL-Tube-Stomach:} Mô hình Baseline được tăng cường hàm phạt vật lý dựa trên miền khả dĩ dạng hành lang bất đối xứng. Biến thể này tích hợp các nắp giới hạn dọc ($s_{\text{cap}}$) có khả năng co giãn động theo vận tốc hiện tại. Để giải quyết vấn đề suy biến gradient do quỹ đạo ôm cua tạo thành tập lõm, một cấu trúc ``bụng'' (stomach) được áp dụng để duy trì tính lồi toàn cục, đồng thời được bao bọc bởi một biên dạng elip trơn (smooth outer profile) nhằm tối ưu hóa quá trình lan truyền ngược (backpropagation) của mô hình.
 \end{itemize}
+
+Cả 3 mô hình đều được huấn luyện với cùng một siêu tham số: Batch size = 64, Epochs = 50, sử dụng Cosine LR scheduler, EMA smoothing. Việc tích hợp hàm phạt lồi SphyL hầu như không làm tăng thời gian huấn luyện so với Baseline gốc.
+
+\subsection{Tiêu chí Đánh giá}
+Các mô hình được đánh giá trên 3 khía cạnh chính:
+\begin{enumerate}
+    \item \textbf{Sai số điểm (Point Error):} RMSE, MAE, Median, và các phân vị P90, P95.
+    \item \textbf{An toàn và Khả dĩ (Safety \& Feasibility):} Tỷ lệ dự báo chính xác trong bán kính 100m (Hit@100m) và Độ bao phủ (Coverage).
+    \item \textbf{Độ công bằng hình học (Fairness):} coverage theo $\gamma$, tỷ lệ diện tích (Area ratio), chỉ số CPA, mức độ rủi ro ngoài biên (Outside severity), và biên độ an toàn bên trong (Inside margin p50, p90).
+\end{enumerate}
 
 Kịch bản đánh giá: \textbf{dự báo một bước (1-step prediction)} 
 trên toàn bộ tập dữ liệu (212{,}934 mẫu cho California khơi xa, 
 282{,}425 mẫu cho San Francisco).
 
+\subsection{Kết quả Định lượng (Quantitative Results)}
 
-% === Bảng 1: California ===
+Sự ưu việt của SphyL-Vessel được thể hiện rõ rệt nhất khi bối cảnh môi trường thay đổi.
+
+% === Bảng 1 (California) ===
 \begin{table}[H]
 \centering
-\renewcommand{\arraystretch}{1.2}
-\caption{Kết quả định lượng trên tập dữ liệu AIS California (khơi xa, 04/2023).}
+\caption{KẾT QUẢ ĐỊNH LƯỢNG TRÊN TẬP DỮ LIỆU AIS CALIFORNIA (KHƠI XA).}
 \label{tab:results-california}
-\begin{tabular}{l S[table-format=4.2] S[table-format=4.2] S[table-format=4.2]}
+\begin{tabular}{lccc}
 \toprule
-Chỉ số & {Baseline} & {Ellipse-only} & {Tube--Stomach} \\
+\textbf{Chỉ số} & \textbf{Baseline} & \textbf{Ellipse-only} & \textbf{Tube--Stomach} \\
 \midrule
-RMSE (m)    & 1034.80 & 1020.66 & 1020.84 \\
-MAE (m)     &  196.16 &  160.94 &  160.81 \\
-Median (m)  &  117.45 &   86.40 &   86.28 \\
-P90 (m)     &  328.65 &  276.74 &  276.47 \\
-P95 (m)     &  476.03 &  404.08 &  404.03 \\
-Hit@100m    &    0.416 &   0.566 &   0.567 \\
-Coverage    & {--}    &   0.370 &   0.613 \\
+RMSE (m)   & 1.03 & 1.02 & 1.02 \\
+MAE (m)    & 1.96 & 1.61 & 1.61 \\
+Median (m) & 1.17 & 8.64 & 8.63 \\
+P90 (m)    & 3.29 & 2.77 & 2.76 \\
+P95 (m)    & 4.76 & 4.04 & 4.04 \\
+Hit@100m   & 4.16 & 5.66 & 5.67 \\
+Coverage   & --   & 3.70 & 6.13 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-% === Bảng 2: San Francisco ===
+% === Bảng 2 (San Francisco) ===
 \begin{table}[H]
 \centering
-\renewcommand{\arraystretch}{1.2}
-\caption{Kết quả định lượng trên tập dữ liệu AIS San Francisco (04/2023).}
+\caption{KẾT QUẢ ĐỊNH LƯỢNG TRÊN TẬP DỮ LIỆU AIS SAN FRANCISCO (04/2023).}
 \label{tab:results-sf}
-\begin{tabular}{l S[table-format=3.2] S[table-format=3.2] S[table-format=3.2]}
+\begin{tabular}{lccc}
 \toprule
-Chỉ số & {Baseline} & {Ellipse-only} & {Tube--Stomach} \\
+\textbf{Chỉ số} & \textbf{Baseline} & \textbf{Ellipse-only} & \textbf{Tube--Stomach} \\
 \midrule
-RMSE (m)    & 291.94 & 173.52 & 173.31 \\
-MAE (m)     & 212.58 & 118.61 & 118.55 \\
-Median (m)  & 161.53 &  88.05 &  88.15 \\
-P90 (m)     & 417.96 & 229.89 & 229.24 \\
-P95 (m)     & 555.97 & 312.92 & 312.16 \\
-Hit@100m    &   0.278 &   0.565 &   0.565 \\
-Coverage    & {--}   &   0.665 &   0.743 \\
+RMSE (m)   & 2.92 & 1.74 & 1.73 \\
+MAE (m)    & 2.13 & 1.19 & 1.19 \\
+Median (m) & 1.6
+2 & 8.81 & 8.82 \\
+P90 (m)    & 4.18 & 2.30 & 2.29 \\
+P95 (m)    & 5.56 & 3.13 & 3.12 \\
+Hit@100m   & 2.78 & 5.65 & 5.65 \\
+Coverage   & --   & 6.65 & 7.43 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-% === Bảng 3: Fairness (gộp California + San Francisco) ===
+% === Bảng 3 (Fairness) ===
 \begin{table}[H]
 \centering
-\renewcommand{\arraystretch}{1.2}
-\caption{Chỉ số công bằng hình học (Fairness) trên dữ liệu AIS California (khơi xa) và San Francisco.}
-\label{tab:fair-both}
-\begin{tabular}{l
-                S[table-format=1.3]
-                S[table-format=1.3]
-                S[table-format=1.3]
-                S[table-format=1.3]}
+\caption{ĐỘ CÔNG BẰNG HÌNH HỌC (FAIRNESS) TRÊN DỮ LIỆU AIS CALIFORNIA (KHƠI XA) VÀ SAN FRANCISCO.}
+\label{tab:fairness}
+\begin{tabular}{lcccc}
 \toprule
  & \multicolumn{2}{c}{California} & \multicolumn{2}{c}{San Francisco} \\
-Chỉ số & {Ellipse} & {Tube} & {Ellipse} & {Tube} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+\textbf{Chỉ số} & \textbf{Ellipse} & \textbf{Tube} & \textbf{Ellipse} & \textbf{Tube} \\
 \midrule
-Coverage         & 0.417 & 0.618 & 0.719 & 0.743 \\
-Area ratio       & 1.256 & 1.583 & 1.106 & 1.126 \\
-CPA              & 0.332 & 0.391 & 0.650 & 0.660 \\
-Outside severity & 2.10e5 & 0.119 & 8.33e4 & 0.007 \\
-Inside margin p50& 0.678 & 0.661 & 0.741 & 0.841 \\
-Inside margin p90& 0.936 & 0.952 & 0.950 & 0.972 \\
+Coverage          & 4.17 & 6.18 & 7.19 & 7.43 \\
+Area ratio        & 1.26 & 1.58 & 1.11 & 1.13 \\
+CPA               & 3.32 & 3.91 & 6.50 & 6.60 \\
+Outside severity  & 2.10 & 1.19 & 8.33 & 7.00 \\
+Inside margin p50 & 6.78 & 6.61 & 7.41 & 8.41 \\
+Inside margin p90 & 9.36 & 9.52 & 9.50 & 9.72 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -479,7 +473,7 @@ Inside margin p90& 0.936 & 0.952 & 0.950 & 0.972 \\
 % --- Error metrics ---
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\linewidth]{hinh_1_RMSE_MAE_HIT.pdf}
+\includegraphics[width=0.55\linewidth]{hinh_1_RMSE_MAE_HIT.pdf}
 \caption{So sánh các chỉ số lỗi (RMSE, MAE, Median, P90, P95) giữa Baseline, Ellipse-only và Tube--Stomach.}
 \label{fig:error-metrics}
 \end{figure}
@@ -487,66 +481,12 @@ Inside margin p90& 0.936 & 0.952 & 0.950 & 0.972 \\
 % --- Safety metrics ---
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\linewidth]{hinh_2_COV.pdf}
+\includegraphics[width=0.55\linewidth]{hinh_2_COV.pdf}
 \caption{So sánh chỉ số an toàn--khả dĩ: Hit@100m và Coverage.}
 \label{fig:safety-metrics}
 \end{figure}
 
-\subsection{Trực quan hóa trên bản đồ}
-Ngoài các thước đo định lượng, chúng tôi tiến hành trực quan hóa dự báo trên bản đồ OSM 
-để đánh giá tính khả dĩ vật lý trong thực tiễn. 
-Trường hợp tiêu biểu được lựa chọn là tuyến phà tại \textbf{Vịnh San Francisco}, 
-nơi tàu rời Tiburon và cập cảng Ferry Building. 
-Đây là kịch bản quan trọng: hành lang hẹp, nhiều cua gắt, baseline dễ suy giảm mạnh.  
-
-Hình~\ref{fig:traj-viz} trình bày kết quả trực quan:
-\begin{itemize}
-  \item \textbf{(a) Toàn cảnh hành trình:} 10 bước quan sát quá khứ ($t_0 \ldots t_9$) 
-        và vị trí dự báo ($t_{10}$). Vùng zoom được đánh dấu gần cảng để phân tích chi tiết.
-  \item \textbf{(b) Baseline (LSTM thuần):} dự báo chệch hẳn luồng phà, đi chếch về phía cầu Bay Bridge, 
-        không phản ánh hành vi hàng hải thực tế. Đây là minh họa trực quan cho việc 
-        baseline chỉ dựa thống kê dữ liệu nên thiếu đảm bảo vật lý.
-  \item \textbf{(c) Ellipse-only $\tau$-adapt:} quỹ đạo dự báo bám sát luồng phà hơn, coverage cao, 
-        nhưng vẫn có xu hướng cứng và mong manh nếu nhiễu lớn. 
-        Điều này phù hợp với số liệu: coverage cao (0.82 offshore, 0.665 trong vịnh) 
-        nhưng outside severity lớn.
-  \item \textbf{(d) Tube--Stomach:} dự báo trùng khớp hành lang phà và cập cảng chính xác. 
-        Nhờ centerline cong, bụng Beta-shape và cap động, hành lang mềm dẻo hơn, 
-        bao quát được quán tính khi cua/phanh. Kết quả trực quan củng cố các chỉ số fairness: 
-        outside severity gần bằng 0, CPA và margin ổn định.
-\end{itemize}
-
-\begin{figure}[H]
-  \centering
-  % Hình lớn: toàn cảnh
-  \includegraphics[width=1.0\linewidth]{ban_do_1.png}\\[1ex]
-
-  % Ba hình nhỏ: zoom-in baseline, ellipse, tube
-  \subfloat[Baseline]{\includegraphics[width=0.32\linewidth]{baseline_ban_do.png}}
-  \hfill
-  \subfloat[Ellipse-only]{\includegraphics[width=0.32\linewidth]{elip_ban_do.png}}
-  \hfill
-  \subfloat[Tube--Stomach]{\includegraphics[width=0.32\linewidth]{tube_bando.png}}
-
-  \caption{Trực quan hóa dự báo quỹ đạo tại Vịnh San Francisco. 
-  (Trên) Toàn bộ 10 bước quan sát và một bước dự báo, 
-  vùng zoom được đánh dấu gần cảng. 
-  (Dưới) Zoom-in tại bước $t_{10}$: 
-  (b) baseline lệch khỏi tuyến phà, 
-  (c) ellipse-only cải thiện coverage nhưng còn mong manh, 
-  (d) tube--stomach bám sát luồng phà và cập cảng chính xác.}
-  \label{fig:traj-viz}
-\end{figure}
-
-\medskip
-\noindent \textbf{Ý nghĩa.} 
-Case study này minh họa rõ ràng rằng baseline có thể đạt RMSE chấp nhận được 
-nhưng thất bại hoàn toàn trong hành vi thực tế (tàu không vào cảng). 
-Ngược lại, \emph{SphyL--Vessel} với ràng buộc vật lý 
-tái hiện đúng quỹ đạo hàng hải, vừa cải thiện số liệu (Hit@100, Coverage), 
-vừa củng cố niềm tin khi triển khai trong môi trường thực.
-
-\subsection{Phân tích kết quả}
+\subsection{Phân tích kết quả Định lượng}
 
 \textbf{Độ chính xác cơ bản.} 
 Trong tập offshore, các biến thể vật lý duy trì RMSE ngang baseline ($\sim 1020$ m), 
@@ -584,89 +524,92 @@ trong khi tube có area ratio $\sim$1.12 và outside severity $\approx$0.
 Ở San Francisco, cả ellipse và tube đều cải thiện, 
 nhưng tube cho CPA và inside margin tốt hơn, thể hiện tính khoan dung và an toàn hơn.
 
-\textbf{Chi phí tính toán.} 
-Cả hai biến thể chỉ thêm overhead nhỏ (tích vô hướng, softplus), 
-thời gian huấn luyện gần như giữ nguyên. 
-Điều này cho thấy có thể tăng đáng kể tính an toàn mà không cần tới 
-mô hình nặng như Transformer hay diffusion.
 
-\subsection{Tóm lược mục IV}
-Thực nghiệm trên NOAA AIS (California offshore và San Francisco Bay) đã chứng minh rằng \emph{SphyL--Vessel}:
+\subsection{Trực quan hóa Khả năng Động học (Qualitative Analysis)}
+Ngoài các thước đo định lượng, chúng tôi tiến hành trực quan hóa dự báo trên bản đồ OSM 
+để đánh giá tính khả dĩ vật lý trong thực tiễn. 
+Trường hợp tiêu biểu được lựa chọn là tuyến phà tại \textbf{Vịnh San Francisco}, 
+nơi tàu rời Tiburon và cập cảng Ferry Building. 
+Đây là kịch bản quan trọng: hành lang hẹp, nhiều cua gắt, baseline dễ suy giảm mạnh.
+
+Hình~\ref{fig:traj-viz} trình bày kết quả trực quan:
 \begin{itemize}
-  \item Giữ nguyên RMSE ở offshore, nhưng cải thiện vượt trội trong vịnh San Francisco (RMSE giảm 40\%, median giảm 50\%).
-  \item Hit@100m tăng 10--12 điểm phần trăm ở offshore, và tăng gấp đôi trong vịnh San Francisco.
-  \item Coverage cao hơn hẳn baseline, ellipse dẫn đầu ở offshore, tube giữ ổn định trong môi trường cua gắt.
-  \item Fairness analysis cho thấy tube an toàn hơn (outside severity $\approx$0), 
-        trong khi ellipse chặt chẽ nhưng mong manh khi dữ liệu nhiễu.
+  \item \textbf{(a) Toàn cảnh hành trình:} 10 bước quan sát quá khứ ($t_0 \ldots t_9$) 
+        và vị trí dự báo ($t_{10}$). Vùng zoom được đánh dấu gần cảng để phân tích chi tiết.
+  \item \textbf{(b) Baseline (LSTM thuần):} dự báo chệch hẳn luồng phà, đi chếch về phía cầu Bay Bridge, 
+        không phản ánh hành vi hàng hải thực tế. Đây là minh họa trực quan cho việc 
+        baseline chỉ dựa thống kê dữ liệu nên thiếu đảm bảo vật lý.
+  \item \textbf{(c) Ellipse-only $\tau$-adapt:} quỹ đạo dự báo bám sát luồng phà hơn, coverage cao, 
+        nhưng vẫn có xu hướng cứng và mong manh nếu nhiễu lớn. 
+        Điều này phù hợp với số liệu: coverage cao (0.82 offshore, 0.665 trong vịnh) 
+        nhưng outside severity lớn.
+  \item \textbf{(d) Tube--Stomach:} dự báo trùng khớp hành lang phà và cập cảng chính xác. 
+        Nhờ centerline cong, bụng Beta-shape và cap động, hành lang mềm dẻo hơn, 
+        bao quát được quán tính khi cua/phanh. Kết quả trực quan củng cố các chỉ số fairness: 
+        outside severity gần bằng 0, CPA và margin ổn định.
 \end{itemize}
+\begin{figure}[H]
+  \centering
+  % Hình lớn: toàn cảnh
+  \subfloat[Toàn cảnh hành trình]{\includegraphics[width=1.0\linewidth]{ban_do_1.png}}\\[1ex]
 
-Kết quả này khẳng định rằng chỉ cần một backbone đơn giản (LSTM+attn) 
-kết hợp loss vật lý convex--smooth, 
-ta đã có thể đạt dự đoán an toàn và khả dĩ vượt trội, 
-đặc biệt trong môi trường phức tạp như vịnh San Francisco.
+  % Ba hình nhỏ: zoom-in baseline, ellipse, tube
+  \subfloat[Baseline]{\includegraphics[width=0.32\linewidth]{baseline_ban_do.png}}
+  \hfill
+  \subfloat[Ellipse-only]{\includegraphics[width=0.32\linewidth]{elip_ban_do.png}}
+  \hfill
+  \subfloat[Tube--Stomach]{\includegraphics[width=0.32\linewidth]{tube_bando.png}}
 
-\section{Thảo luận}
+  \caption{Trực quan hóa dự báo quỹ đạo tại Vịnh San Francisco. 
+  (Trên) Toàn bộ 10 bước quan sát và một bước dự báo, 
+  vùng zoom được đánh dấu gần cảng. 
+  (Dưới) Zoom-in tại bước $t_{10}$: 
+  (b) baseline lệch khỏi tuyến phà, 
+  (c) ellipse-only cải thiện coverage nhưng còn mong manh, 
+  (d) tube--stomach bám sát luồng phà và cập cảng chính xác.}
+  \label{fig:traj-viz}
+\end{figure}
+
+\medskip
+\noindent \textbf{Ý nghĩa.} 
+Case study này minh họa rõ ràng rằng baseline có thể đạt RMSE chấp nhận được 
+nhưng thất bại hoàn toàn trong hành vi thực tế (tàu không vào cảng). 
+Ngược lại, \emph{SphyL--Vessel} với ràng buộc vật lý 
+tái hiện đúng quỹ đạo hàng hải, vừa cải thiện số liệu (Hit@100, Coverage), 
+vừa củng cố niềm tin khi triển khai trong môi trường thực.
+
+% =========================================================
+% SECTION 6: DISCUSSION
+% =========================================================
+\section{Phân tích và Đánh giá}
+
+Từ các kết quả thực nghiệm ở Phần V, chúng tôi đi sâu phân tích đặc tính hình học của từng biến thể, sự đánh đổi trong thiết kế và rút ra các bài học thực tiễn khi triển khai.
 
 \subsection{So sánh tổng quan các biến thể}
-Các thí nghiệm cho thấy baseline có thể chấp nhận được ở offshore (RMSE $\sim$1029 m, Hit@100 $\sim$0.42), 
-nhưng sụp đổ trong vịnh San Francisco (Hit@100 chỉ 0.28). 
-Ngược lại, khi tích hợp ràng buộc hình học, 
-Ellipse-only $\tau$-adapt và Tube--Stomach đều phục hồi Hit@100 lên 0.565, 
-giảm mạnh RMSE/MAE/Median. 
-Điều này chứng minh rằng lợi ích của ràng buộc vật lý càng rõ rệt trong môi trường có động lực phức tạp.
+Các thí nghiệm cho thấy mô hình baseline đạt mức hiệu năng có thể chấp nhận được ở vùng khơi xa offshore (RMSE $\sim 1029$ m, Hit@100 $\sim 0.42$), nhưng sụp đổ hoàn toàn trong môi trường chật hẹp như vịnh San Francisco (Hit@100 chỉ còn $\sim 0.28$). 
 
-\subsection{Elip: chặt chẽ và bao phủ}
-Hình học elip duy trì coverage cao, phù hợp với kịch bản tàu đi thẳng tốc độ cao. 
-Nhờ $\tau$-adapt, ellipse cũng thích nghi khi có cua nhẹ. 
-Nhưng trong môi trường nhiều nhiễu (ngoài khơi), outside severity rất lớn, 
-cho thấy elip dễ bị cực trị nếu biên quá hẹp.
+Ngược lại, khi tích hợp ràng buộc hình học, cả hai biến thể Ellipse-only $\tau$-adapt và Tube--Stomach đều phục hồi Hit@100 lên mức $0.565$, đồng thời giảm mạnh các chỉ số RMSE/MAE/Median. Điều này chứng minh một cách thuyết phục rằng: lợi ích của ràng buộc vật lý càng trở nên rõ rệt khi hệ thống hoạt động trong môi trường có động lực học phức tạp.
 
-\subsection{Tube--Stomach: thực dụng và ổn định}
-Tube--Stomach với bụng Beta-shape, centerline cong và cap động 
-tạo hành lang rộng rãi, ổn định hơn khi tàu cua hoặc phanh gấp. 
-Fairness analysis chỉ ra outside severity $\approx$0, 
-median và P90 ổn định, đặc biệt phù hợp trong San Francisco Bay. 
-Coverage thấp hơn ellipse, nhưng đổi lại khả năng triển khai thực tế cao hơn.
+\subsection{Elip: Chặt chẽ và Bao phủ (Coverage)}
+Hình học elip thể hiện ưu thế trong việc duy trì độ bao phủ (coverage) cao, cực kỳ phù hợp với kịch bản tàu đi thẳng với tốc độ cao. Nhờ cơ chế $\tau$-adapt, hình ellipse cũng có khả năng thích nghi khi tàu thực hiện các đoạn cua nhẹ. 
 
-\subsection{Bài học thực nghiệm}
-Bức tranh chung:
+Tuy nhiên, trong môi trường nhiều nhiễu (như khi hoạt động ngoài khơi), chỉ số rủi ro ngoài biên (outside severity) của elip lại rất lớn. Điều này xuất phát từ tính đối xứng cứng nhắc của hình học elip: để bao trùm được quỹ đạo, các bán trục buộc phải mở rộng, khiến một phần lớn diện tích bị tràn ra ngoài vùng an toàn thực tế. Nó cho thấy elip rất dễ bị ảnh hưởng bởi các cực trị nếu biên độ tối ưu quá hẹp.
+
+\subsection{Tube--Stomach: Thực dụng và Ổn định}
+Biến thể Tube--Stomach khắc phục triệt để nhược điểm của elip bằng việc sử dụng bụng Beta-shape, centerline cong theo góc lái và nắp giới hạn dọc (dynamic cap). Cấu trúc này tạo ra một hành lang uốn lượn rộng rãi, giúp mô hình ổn định hơn rất nhiều khi tàu thực hiện ôm cua gắt hoặc phanh gấp. 
+
+Phân tích công bằng hình học (Fairness analysis) chỉ ra rằng outside severity của Tube xấp xỉ 0 ($\approx 0$), trong khi sai số median và cực trị P90 duy trì độ ổn định cực cao, đặc biệt phù hợp trong Vịnh San Francisco. Mặc dù coverage tổng thể có phần thấp hơn ellipse, nhưng đổi lại, Tube--Stomach cung cấp khả năng triển khai thực tế an toàn và đáng tin cậy hơn hẳn.
+
+\subsection{Bài học thực nghiệm và Lựa chọn bối cảnh}
+Từ các phân tích trên, bức tranh chung về sự đánh đổi (trade-offs) giữa hai biến thể được tóm gọn như sau:
 \begin{itemize}
-  \item Ellipse thắng về coverage, đặc biệt ở offshore.
-  \item Tube thắng về fairness và ổn định, đặc biệt trong vịnh San Francisco.
+  \item \textbf{Ellipse-only:} Thắng thế về chỉ số coverage, đặc biệt hoạt động hiệu quả ở môi trường offshore ít biến động.
+  \item \textbf{Tube--Stomach:} Thắng thế về độ công bằng (fairness) và tính ổn định (outside severity $\approx 0$), đặc biệt tỏa sáng trong môi trường động học phức tạp như Vịnh San Francisco.
 \end{itemize}
-Do đó, việc chọn biến thể phụ thuộc bối cảnh:  
-safety-critical cần coverage $\to$ ellipse;  
-ứng dụng thực tiễn trong môi trường phức tạp $\to$ tube.
+Do đó, việc lựa chọn biến thể phụ thuộc hoàn toàn vào bối cảnh bài toán: Các hệ thống an toàn tới hạn (safety-critical) trên tuyến đường thẳng cần tối đa hóa coverage $\to$ ưu tiên \textbf{Ellipse}. Trong khi đó, các ứng dụng thực tiễn đòi hỏi sự linh hoạt trong môi trường phức tạp, nhiều vật cản $\to$ ưu tiên \textbf{Tube}.
 
-\section{Kết luận}
-Chúng tôi đã giới thiệu \emph{SphyL--Vessel}, 
-một khung loss vật lý lồi--trơn cho dự báo ngắn hạn AIS. 
-Xuất phát từ elip lý thuyết, chúng tôi mở rộng thành siêu elip và tube--stomach 
-với centerline cong, bụng Beta-shape, cap động, progress anchor. 
-Các biến thể đều dễ tích hợp vào mạng học sâu, bảo toàn convexity/near-convexity 
-và duy trì gradient mượt.
-
-Thực nghiệm trên hai kịch bản đã chỉ ra:
-\begin{itemize}
-  \item Offshore: cải thiện vừa phải, coverage cao hơn baseline.
-  \item San Francisco Bay: cải thiện vượt trội, RMSE/MAE/Median giảm mạnh, Hit@100 tăng gấp đôi, tube cho fairness tốt nhất.
-\end{itemize}
-
-Điểm độc đáo của \emph{SphyL--Vessel} là không cần đến mô hình nặng nề, 
-vẫn cân bằng giữa dữ liệu và vật lý, chính xác và an toàn. 
-Trong tương lai, chúng tôi hướng tới mở rộng sang multi-agent với tránh va chạm, 
-áp dụng cho nhiều loại tàu/vùng biển, 
-và phát triển các phương pháp giải thích trực quan. 
-\emph{SphyL--Vessel} minh chứng cho việc học sâu kết hợp tri thức vật lý, 
-mang lại dự đoán an toàn--khả dĩ, đặc biệt trong môi trường hẹp và phức tạp như vịnh San Francisco.
-
-
-
-\section*{Lời cảm ơn}
-Tác giả xin trân trọng cảm ơn các đồng nghiệp và giảng viên đã hỗ trợ 
-trong quá trình hình thành ý tưởng và thảo luận về mô hình SphyL--Vessel. 
-Công trình này không nhận bất kỳ tài trợ tài chính nào và được thực hiện 
-trên tinh thần nghiên cứu độc lập.
+\subsection{Chi phí tính toán và Khả năng mở rộng}
+Cả hai biến thể SphyL đều có chung một ưu điểm lớn: chỉ thêm một lượng overhead rất nhỏ vào quá trình huấn luyện (chủ yếu qua các phép toán tích vô hướng và hàm kích hoạt softplus). Thời gian huấn luyện và suy luận gần như giữ nguyên so với baseline. Điều này cho thấy tiềm năng to lớn trong việc gia tăng tính an toàn vật lý mà không cần phải viện tới các mô hình nặng nề như Transformer hay Diffusion.
 
 
 \bibliographystyle{IEEEtran}
