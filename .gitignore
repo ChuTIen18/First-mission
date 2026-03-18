@@ -5,3 +5,9 @@ __pycache__/
 *.pkl
 *.pt
 *.csv
+*.aux
+*.log
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.pdf
