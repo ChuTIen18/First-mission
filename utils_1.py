@@ -476,3 +476,6 @@ def evaluate_phaseA(df_input,
     # 2) Metrics (mét)
     metrics = compute_point_metrics_norm(pred_norm, true_norm, scaler, hit_threshold_m=hit_threshold_m)
     return metrics
+
+
+    
